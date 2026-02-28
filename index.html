@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>2D Diamond Shooter</title>
+<style>
+  body { margin:0; overflow:hidden; background:#111; }
+  canvas { display:block; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let keys = {};
+let arrows = [];
+let enemies = [];
+let particles = [];
+let bossBullets = [];
+let shockwaves = [];
+let shockwaveCooldown = 0;
+
+let score = 0;
+let level = 1;
+let spawnInterval = 1500;
+
+// 🔥 NOUVEAUX BONUS
+let multiShot = 1;
+let shieldTime = 0;
+
+// Joueur
+const player = {
+    x: canvas.width/2,
+    y: canvas.height/2,
+    size: 30,
+    speed: 5,
+    health: 50,
+    maxHealth: 50
+};
+
+// CONTROLES
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+
+// 🎯 MULTI-TIR LIMITÉ À 3
+canvas.addEventListener("click", e=>{
+    const baseAngle = Math.atan2(e.clientY - player.y, e.clientX - player.x);
+
+    for(let i=0;i<multiShot;i++){
+        const spread = (i - (multiShot-1)/2) * 0.15;
+        const angle = baseAngle + spread;
+
+        arrows.push({
+            x: player.x,
+            y: player.y,
+            dx: Math.cos(angle) * 12,
+            dy: Math.sin(angle) * 12,
+            size: 8
+        });
+    }
+});
+
+// Onde de choc
+canvas.addEventListener("mousedown", e=>{
+    if(e.button === 2 && shockwaveCooldown <= 0){
+        shockwaves.push({ x: player.x, y: player.y, radius: 0, maxRadius: 150 });
+        shockwaveCooldown = 180;
+    }
+});
+
+// Spawn ennemis
+function spawnEnemy(){
+    const side = Math.random()*4;
+    let x,y;
+    if(side<1){ x=Math.random()*canvas.width; y=-20;}
+    else if(side<2){ x=canvas.width+20; y=Math.random()*canvas.height;}
+    else if(side<3){ x=Math.random()*canvas.width; y=canvas.height+20;}
+    else{ x=-20; y=Math.random()*canvas.height;}
+
+    let radius = 20;
+    let speed = 1.5;
+    let health = 1;
+    let color = "red";
+
+    if(Math.random() < 0.2){
+        radius = 35; speed = 0.7; health = 5; color = "darkred";
+    }
+
+    enemies.push({x,y,radius,speed,health,isBoss:false,color});
+}
+
+// Boss
+function spawnBoss(){
+    enemies.push({
+        x: Math.random()*canvas.width,
+        y: -100,
+        radius: 60,
+        speed: 0.8,
+        health: 10 + level*3,
+        isBoss: true,
+        color: "purple"
+    });
+}
+
+// Explosion
+function createExplosion(x,y,color){
+    for(let i=0;i<15;i++){
+        particles.push({
+            x,y,
+            dx:(Math.random()-0.5)*6,
+            dy:(Math.random()-0.5)*6,
+            life:30,
+            color
+        });
+    }
+}
+
+function update(){
+    if(shockwaveCooldown > 0) shockwaveCooldown--;
+    if(shieldTime > 0) shieldTime--; // ⏱️ bouclier
+
+    // Déplacement joueur
+    if(keys["ArrowUp"]) player.y -= player.speed;
+    if(keys["ArrowDown"]) player.y += player.speed;
+    if(keys["ArrowLeft"]) player.x -= player.speed;
+    if(keys["ArrowRight"]) player.x += player.speed;
+
+    // Arrows
+    for(let i=arrows.length-1;i>=0;i--){
+        const a = arrows[i];
+        a.x += a.dx;
+        a.y += a.dy;
+        if(a.x<0||a.x>canvas.width||a.y<0||a.y>canvas.height)
+            arrows.splice(i,1);
+    }
+
+    // Ennemis
+    for(let eIndex=enemies.length-1;eIndex>=0;eIndex--){
+        const e = enemies[eIndex];
+        const angle = Math.atan2(player.y - e.y, player.x - e.x);
+        e.x += Math.cos(angle)*e.speed;
+        e.y += Math.sin(angle)*e.speed;
+
+        // Tir boss
+        if(e.isBoss && Math.random() < 0.02){
+            const shootAngle = Math.atan2(player.y - e.y, player.x - e.x);
+            bossBullets.push({
+                x: e.x, y: e.y,
+                dx: Math.cos(shootAngle) * 6,
+                dy: Math.sin(shootAngle) * 6,
+                size: 6
+            });
+        }
+
+        const dist = Math.hypot(player.x - e.x, player.y - e.y);
+        if(dist < player.size/2 + e.radius){
+            if(shieldTime <= 0){
+                player.health -= e.isBoss ? 2 : 1;
+            }
+        }
+
+        for(let aIndex=arrows.length-1;aIndex>=0;aIndex--){
+            const a = arrows[aIndex];
+            const distArrow = Math.hypot(a.x - e.x, a.y - e.y);
+            if(distArrow < e.radius + a.size){
+                e.health--;
+                arrows.splice(aIndex,1);
+                createExplosion(a.x,a.y,"yellow");
+
+                if(e.health<=0){
+                    createExplosion(e.x,e.y,e.isBoss?"purple":e.color);
+                    enemies.splice(eIndex,1);
+                    score += e.isBoss ? 100 : 10;
+                }
+                break;
+            }
+        }
+    }
+
+    // Balles boss
+    for(let i=bossBullets.length-1;i>=0;i--){
+        const b = bossBullets[i];
+        b.x += b.dx;
+        b.y += b.dy;
+
+        const dist = Math.hypot(player.x - b.x, player.y - b.y);
+        if(dist < player.size/2 + b.size){
+            if(shieldTime <= 0) player.health -= 3;
+            bossBullets.splice(i,1);
+            continue;
+        }
+
+        if(b.x<0||b.x>canvas.width||b.y<0||b.y>canvas.height){
+            bossBullets.splice(i,1);
+        }
+    }
+
+    // Level up + BONUS
+    if(score >= level*200){
+        level++;
+        spawnInterval = Math.max(500, spawnInterval-200);
+
+        if(level % 2 === 0){
+            multiShot = Math.min(3, multiShot + 1); // 🔥 max 3
+        } else {
+            shieldTime = 1800; // 🛡️ 30s
+        }
+    }
+}
+
+function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // Joueur
+    ctx.fillStyle="lime";
+    ctx.beginPath();
+    ctx.moveTo(player.x, player.y - player.size/2);
+    ctx.lineTo(player.x + player.size/2, player.y);
+    ctx.lineTo(player.x, player.y + player.size/2);
+    ctx.lineTo(player.x - player.size/2, player.y);
+    ctx.closePath();
+    ctx.fill();
+
+    // Aura bouclier
+    if(shieldTime > 0){
+        ctx.strokeStyle="cyan";
+        ctx.lineWidth=3;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, player.size, 0, Math.PI*2);
+        ctx.stroke();
+    }
+
+    // HUD
+    ctx.fillStyle="white";
+    ctx.font="20px Arial";
+    ctx.fillText("Score: "+score,20,60);
+    ctx.fillText("Niveau: "+level,20,90);
+    ctx.fillText("Tirs: "+multiShot+(multiShot===3?" (MAX)":"") ,20,120);
+    if(shieldTime > 0){
+        ctx.fillText("Bouclier: "+Math.ceil(shieldTime/60)+"s",20,150);
+    }
+}
+
+function gameLoop(){
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+setInterval(spawnEnemy, spawnInterval);
+setInterval(spawnBoss, 30000);
+</script>
+</body>
+</html>
