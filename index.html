@@ -1,16 +1,15 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>2D Diamond Shooter</title>
+<title>Space Survival Ultra</title>
 <style>
-  body { margin:0; overflow:hidden; background:#111; }
-  canvas { display:block; }
+body { margin: 0; overflow: hidden; background: black; }
+canvas { display: block; }
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
-
 <script>
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -18,293 +17,340 @@ const ctx = canvas.getContext("2d");
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-let keys = {};
-let arrows = [];
+window.addEventListener("resize", () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+});
+
+const player = {
+    x: canvas.width/2,
+    y: canvas.height-80,
+    size: 40,
+    speed: 7,
+    health: 10
+};
+
+let bullets = [];
 let enemies = [];
-let particles = [];
-let bossBullets = [];
+let enemyBullets = [];
+let stars = [];
+let planets = [];
+let explosions = [];
 let shockwaves = [];
-let shockwaveCooldown = 0;
 
 let score = 0;
 let level = 1;
-let spawnInterval = 1500;
+let spawnInterval = 2000;
+let playerHitCooldown = 0;
+let powerMode = false;
+let powerTimer = 0;
 
-// 🔥 NOUVEAUX BONUS
-let multiShot = 1;
-let shieldTime = 0;
+//////////////////////
+// 🌌 FOND SPATIAL
+//////////////////////
 
-// Joueur
-const player = {
-    x: canvas.width/2,
-    y: canvas.height/2,
-    size: 30,
-    speed: 5,
-    health: 50,
-    maxHealth: 50
-};
-
-// CONTROLES
-document.addEventListener("keydown", e => keys[e.key] = true);
-document.addEventListener("keyup", e => keys[e.key] = false);
-canvas.addEventListener("contextmenu", e => e.preventDefault());
-
-// 🎯 MULTI-TIR LIMITÉ À 3
-canvas.addEventListener("click", e=>{
-    const baseAngle = Math.atan2(e.clientY - player.y, e.clientX - player.x);
-
-    for(let i=0;i<multiShot;i++){
-        const spread = (i - (multiShot-1)/2) * 0.15;
-        const angle = baseAngle + spread;
-
-        arrows.push({
-            x: player.x,
-            y: player.y,
-            dx: Math.cos(angle) * 12,
-            dy: Math.sin(angle) * 12,
-            size: 8
-        });
-    }
-});
-
-// Onde de choc
-canvas.addEventListener("mousedown", e=>{
-    if(e.button === 2 && shockwaveCooldown <= 0){
-        shockwaves.push({ x: player.x, y: player.y, radius: 0, maxRadius: 150 });
-        shockwaveCooldown = 180;
-    }
-});
-
-// Spawn ennemis
-function spawnEnemy(){
-    const side = Math.random()*4;
-    let x,y;
-    if(side<1){ x=Math.random()*canvas.width; y=-20;}
-    else if(side<2){ x=canvas.width+20; y=Math.random()*canvas.height;}
-    else if(side<3){ x=Math.random()*canvas.width; y=canvas.height+20;}
-    else{ x=-20; y=Math.random()*canvas.height;}
-
-    let radius = 20;
-    let speed = 1.5;
-    let health = 1;
-    let color = "red";
-
-    if(Math.random() < 0.2){
-        radius = 35; speed = 0.7; health = 5; color = "darkred";
-    }
-
-    enemies.push({x,y,radius,speed,health,isBoss:false,color});
-}
-
-// Boss
-function spawnBoss(){
-    enemies.push({
+for (let i = 0; i < 100; i++) {
+    stars.push({
         x: Math.random()*canvas.width,
-        y: -100,
-        radius: 60,
-        speed: 0.8,
-        health: 10 + level*3,
-        isBoss: true,
-        color: "purple"
+        y: Math.random()*canvas.height,
+        speed: Math.random()*1 + 0.2,
+        size: Math.random()*2
     });
 }
 
-// Explosion
-function createExplosion(x,y,color){
-    for(let i=0;i<15;i++){
-        particles.push({
-            x,y,
-            dx:(Math.random()-0.5)*6,
-            dy:(Math.random()-0.5)*6,
-            life:30,
+for (let i = 0; i < 3; i++) {
+    planets.push({
+        x: Math.random()*canvas.width,
+        y: Math.random()*canvas.height,
+        radius: 60 + Math.random()*40,
+        speed: 0.2 + Math.random()*0.3,
+        color: ["#5DADE2","#AF7AC5","#F5B041"][i]
+    });
+}
+
+//////////////////////
+// 💥 EXPLOSIONS
+//////////////////////
+
+function createExplosion(x, y, color="orange", power=20){
+    for(let i = 0; i < power; i++){
+        explosions.push({
+            x, y,
+            dx: (Math.random()-0.5)*6,
+            dy: (Math.random()-0.5)*6,
+            life: 30 + Math.random()*10,
+            size: Math.random()*4+2,
             color
         });
     }
 }
 
-function update(){
-    if(shockwaveCooldown > 0) shockwaveCooldown--;
-    if(shieldTime > 0) shieldTime--; // ⏱️ bouclier
+function createShockwave(x, y, color="cyan"){
+    shockwaves.push({
+        x, y,
+        radius: 0,
+        alpha: 1,
+        color
+    });
+}
 
-    // Déplacement joueur
-    if(keys["ArrowUp"]) player.y -= player.speed;
-    if(keys["ArrowDown"]) player.y += player.speed;
+//////////////////////
+// 🎮 CONTROLES
+//////////////////////
+
+const keys = {};
+document.addEventListener("keydown", e => keys[e.key]=true);
+document.addEventListener("keyup", e => keys[e.key]=false);
+
+canvas.addEventListener("click", ()=>{
+    bullets.push({
+        x: player.x,
+        y: player.y,
+        radius: 5,
+        speed: 8,
+        trail: []
+    });
+});
+
+canvas.addEventListener("contextmenu", e=>{
+    e.preventDefault();
+    createExplosion(player.x, player.y, "cyan", 40);
+    createShockwave(player.x, player.y);
+    enemies = enemies.filter(en=>{
+        const dx=en.x-player.x, dy=en.y-player.y;
+        return Math.sqrt(dx*dx+dy*dy) > 150;
+    });
+});
+
+//////////////////////
+// 👾 SPAWN ENNEMIS
+//////////////////////
+
+function spawnEnemy(){
+    const isBoss = Math.random() < 0.1;
+
+    enemies.push({
+        x: Math.random()*canvas.width,
+        y: -30,
+        radius: isBoss ? 30 : 15,
+        speed: isBoss ? 1.2 : 2,
+        color: isBoss ? "purple" : "red",
+        health: isBoss ? 6 : 3,
+        isBoss,
+        shootCooldown: isBoss ? 120 : 0
+    });
+}
+
+let enemySpawner = setInterval(spawnEnemy, spawnInterval);
+
+//////////////////////
+// 🔄 UPDATE
+//////////////////////
+
+function update(){
+
     if(keys["ArrowLeft"]) player.x -= player.speed;
     if(keys["ArrowRight"]) player.x += player.speed;
 
-    // Arrows
-    for(let i=arrows.length-1;i>=0;i--){
-        const a = arrows[i];
-        a.x += a.dx;
-        a.y += a.dy;
-        if(a.x<0||a.x>canvas.width||a.y<0||a.y>canvas.height)
-            arrows.splice(i,1);
-    }
+    if(playerHitCooldown>0) playerHitCooldown--;
 
-    // Ennemis
-    for(let eIndex=enemies.length-1;eIndex>=0;eIndex--){
-        const e = enemies[eIndex];
-        const angle = Math.atan2(player.y - e.y, player.x - e.x);
-        e.x += Math.cos(angle)*e.speed;
-        e.y += Math.sin(angle)*e.speed;
+    // étoiles
+    stars.forEach(s=>{
+        s.y += s.speed;
+        if(s.y>canvas.height){ s.y=0; s.x=Math.random()*canvas.width; }
+    });
 
-        // Tir boss
-        if(e.isBoss && Math.random() < 0.02){
-            const shootAngle = Math.atan2(player.y - e.y, player.x - e.x);
-            bossBullets.push({
-                x: e.x, y: e.y,
-                dx: Math.cos(shootAngle) * 6,
-                dy: Math.sin(shootAngle) * 6,
-                size: 6
-            });
+    // planètes
+    planets.forEach(p=>{
+        p.y += p.speed;
+        if(p.y-p.radius>canvas.height){
+            p.y=-p.radius;
+            p.x=Math.random()*canvas.width;
         }
+    });
 
-        const dist = Math.hypot(player.x - e.x, player.y - e.y);
-        if(dist < player.size/2 + e.radius){
-            if(shieldTime <= 0){
-                player.health -= e.isBoss ? 2 : 1;
+    // balles joueur + traînée
+    bullets.forEach((b,i)=>{
+        b.y -= b.speed;
+
+        b.trail.push({x:b.x,y:b.y});
+        if(b.trail.length>8) b.trail.shift();
+
+        if(b.y<0) bullets.splice(i,1);
+    });
+
+    // ennemis
+    enemies.forEach((e,i)=>{
+        e.y += e.speed;
+
+        if(e.isBoss){
+            e.shootCooldown--;
+            if(e.shootCooldown<=0){
+                enemyBullets.push({x:e.x,y:e.y,radius:5,speed:4});
+                e.shootCooldown=120;
             }
         }
 
-        for(let aIndex=arrows.length-1;aIndex>=0;aIndex--){
-            const a = arrows[aIndex];
-            const distArrow = Math.hypot(a.x - e.x, a.y - e.y);
-            if(distArrow < e.radius + a.size){
+        const dx=e.x-player.x, dy=e.y-player.y;
+        if(Math.sqrt(dx*dx+dy*dy)<player.size/2+e.radius && playerHitCooldown<=0){
+            player.health -= e.isBoss?2:1;
+            createExplosion(player.x,player.y,"white",15);
+            playerHitCooldown=30;
+        }
+
+        if(e.y>canvas.height+50) enemies.splice(i,1);
+    });
+
+    // tirs ennemis
+    enemyBullets.forEach((b,i)=>{
+        b.y += b.speed;
+        const dx=b.x-player.x, dy=b.y-player.y;
+        if(Math.sqrt(dx*dx+dy*dy)<player.size/2+b.radius){
+            player.health--;
+            createExplosion(player.x,player.y,"orange",10);
+            enemyBullets.splice(i,1);
+        }
+        if(b.y>canvas.height) enemyBullets.splice(i,1);
+    });
+
+    // collisions
+    bullets.forEach((b,bi)=>{
+        enemies.forEach((e,ei)=>{
+            const dx=b.x-e.x, dy=b.y-e.y;
+            if(Math.sqrt(dx*dx+dy*dy)<e.radius){
                 e.health--;
-                arrows.splice(aIndex,1);
-                createExplosion(a.x,a.y,"yellow");
+                bullets.splice(bi,1);
+                createExplosion(b.x,b.y,"yellow",8);
 
                 if(e.health<=0){
-                    createExplosion(e.x,e.y,e.isBoss?"purple":e.color);
-                    enemies.splice(eIndex,1);
-                    score += e.isBoss ? 100 : 10;
+                    createExplosion(e.x,e.y,e.isBoss?"purple":"red", e.isBoss?40:15);
+                    createShockwave(e.x,e.y,e.isBoss?"purple":"red");
+                    enemies.splice(ei,1);
+                    score += e.isBoss?50:10;
+
+                    if(score % 100 === 0){
+                        powerMode=true;
+                        powerTimer=300;
+                    }
                 }
-                break;
             }
-        }
+        });
+    });
+
+    // update explosions
+    explosions.forEach((p,i)=>{
+        p.x+=p.dx; p.y+=p.dy; p.life--; p.size*=0.96;
+        if(p.life<=0) explosions.splice(i,1);
+    });
+
+    // update shockwaves
+    shockwaves.forEach((s,i)=>{
+        s.radius+=6;
+        s.alpha-=0.02;
+        if(s.alpha<=0) shockwaves.splice(i,1);
+    });
+
+    if(powerMode){
+        powerTimer--;
+        if(powerTimer<=0) powerMode=false;
     }
 
-    // Balles boss
-    for(let i=bossBullets.length-1;i>=0;i--){
-        const b = bossBullets[i];
-        b.x += b.dx;
-        b.y += b.dy;
-
-        const dist = Math.hypot(player.x - b.x, player.y - b.y);
-        if(dist < player.size/2 + b.size){
-            if(shieldTime <= 0) player.health -= 3;
-            bossBullets.splice(i,1);
-            continue;
-        }
-
-        if(b.x<0||b.x>canvas.width||b.y<0||b.y>canvas.height){
-            bossBullets.splice(i,1);
-        }
-    }
-
-    // Mise à jour des particules
-    for(let i=particles.length-1;i>=0;i--){
-        const p = particles[i];
-        p.x += p.dx;
-        p.y += p.dy;
-        p.life--;
-        if(p.life <= 0) particles.splice(i,1);
-    }
-
-    // Mise à jour des ondes de choc
-    for(let i=shockwaves.length-1;i>=0;i--){
-        const s = shockwaves[i];
-        s.radius += 5;
-        if(s.radius > s.maxRadius) shockwaves.splice(i,1);
-    }
-
-    // Level up + BONUS
-    if(score >= level*200){
+    if(score>=level*200){
         level++;
-        spawnInterval = Math.max(500, spawnInterval-200);
+        spawnInterval=Math.max(500,spawnInterval-200);
+        clearInterval(enemySpawner);
+        enemySpawner=setInterval(spawnEnemy,spawnInterval);
+    }
 
-        if(level % 2 === 0){
-            multiShot = Math.min(3, multiShot + 1); // 🔥 max 3
-        } else {
-            shieldTime = 1800; // 🛡️ 30s
-        }
+    if(player.health<=0){
+        alert("Game Over — Score: "+score);
+        location.reload();
     }
 }
 
+//////////////////////
+// 🎨 DRAW
+//////////////////////
+
 function draw(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle="black";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
 
-    // Particules (Explosions)
-    particles.forEach(p => {
-        ctx.fillStyle = p.color;
-        ctx.globalAlpha = p.life/30;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 3, 0, Math.PI*2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-    });
+    // étoiles
+    ctx.fillStyle="white";
+    stars.forEach(s=>ctx.fillRect(s.x,s.y,s.size,s.size));
 
-    // Ondes de choc
-    ctx.strokeStyle = "white";
-    ctx.lineWidth = 2;
-    shockwaves.forEach(s => {
+    // planètes
+    planets.forEach(p=>{
+        ctx.fillStyle=p.color;
         ctx.beginPath();
-        ctx.arc(s.x, s.y, s.radius, 0, Math.PI*2);
-        ctx.stroke();
-    });
-
-    // Ennemis
-    enemies.forEach(e => {
-        ctx.fillStyle = e.color;
-        ctx.beginPath();
-        ctx.arc(e.x, e.y, e.radius, 0, Math.PI*2);
+        ctx.arc(p.x,p.y,p.radius,0,Math.PI*2);
         ctx.fill();
     });
 
-    // Arrows (Tirs du joueur)
-    ctx.fillStyle = "yellow";
-    arrows.forEach(a => {
-        ctx.beginPath();
-        ctx.arc(a.x, a.y, a.size, 0, Math.PI*2);
-        ctx.fill();
-    });
-
-    // Balles Boss
-    ctx.fillStyle = "orange";
-    bossBullets.forEach(b => {
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, b.size, 0, Math.PI*2);
-        ctx.fill();
-    });
-
-    // Joueur
-    ctx.fillStyle="lime";
-    ctx.beginPath();
-    ctx.moveTo(player.x, player.y - player.size/2);
-    ctx.lineTo(player.x + player.size/2, player.y);
-    ctx.lineTo(player.x, player.y + player.size/2);
-    ctx.lineTo(player.x - player.size/2, player.y);
-    ctx.closePath();
-    ctx.fill();
-
-    // Aura bouclier
-    if(shieldTime > 0){
-        ctx.strokeStyle="cyan";
+    // ondes de choc
+    shockwaves.forEach(s=>{
+        ctx.strokeStyle=s.color;
+        ctx.globalAlpha=s.alpha;
         ctx.lineWidth=3;
         ctx.beginPath();
-        ctx.arc(player.x, player.y, player.size, 0, Math.PI*2);
+        ctx.arc(s.x,s.y,s.radius,0,Math.PI*2);
         ctx.stroke();
-    }
+        ctx.globalAlpha=1;
+    });
 
-    // HUD
+    // explosions
+    explosions.forEach(p=>{
+        ctx.fillStyle=p.color;
+        ctx.beginPath();
+        ctx.arc(p.x,p.y,p.size,0,Math.PI*2);
+        ctx.fill();
+    });
+
+    // joueur
+    ctx.fillStyle=powerMode?"cyan":"white";
+    ctx.fillRect(player.x-player.size/2,player.y-player.size/2,player.size,player.size);
+
+    // balles + traînées
+    bullets.forEach(b=>{
+        ctx.strokeStyle="yellow";
+        ctx.lineWidth=2;
+        ctx.beginPath();
+        b.trail.forEach((t,i)=>{
+            if(i===0) ctx.moveTo(t.x,t.y);
+            else ctx.lineTo(t.x,t.y);
+        });
+        ctx.stroke();
+
+        ctx.fillStyle="yellow";
+        ctx.beginPath();
+        ctx.arc(b.x,b.y,b.radius,0,Math.PI*2);
+        ctx.fill();
+    });
+
+    // tirs ennemis
+    ctx.fillStyle="orange";
+    enemyBullets.forEach(b=>{
+        ctx.beginPath();
+        ctx.arc(b.x,b.y,b.radius,0,Math.PI*2);
+        ctx.fill();
+    });
+
+    // ennemis
+    enemies.forEach(e=>{
+        ctx.fillStyle=e.color;
+        ctx.beginPath();
+        ctx.arc(e.x,e.y,e.radius,0,Math.PI*2);
+        ctx.fill();
+    });
+
+    // UI
     ctx.fillStyle="white";
     ctx.font="20px Arial";
-    ctx.fillText("Score: "+score,20,60);
+    ctx.fillText("Score: "+score,20,30);
+    ctx.fillText("Vie: "+player.health,20,60);
     ctx.fillText("Niveau: "+level,20,90);
-    ctx.fillText("Tirs: "+multiShot+(multiShot===3?" (MAX)":"") ,20,120);
-    if(shieldTime > 0){
-        ctx.fillText("Bouclier: "+Math.ceil(shieldTime/60)+"s",20,150);
-    }
+    if(powerMode) ctx.fillText("POWER MODE!", canvas.width/2-70,40);
 }
 
 function gameLoop(){
@@ -314,8 +360,6 @@ function gameLoop(){
 }
 
 gameLoop();
-setInterval(spawnEnemy, spawnInterval);
-setInterval(spawnBoss, 30000);
 </script>
 </body>
 </html>
