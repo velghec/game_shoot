@@ -202,6 +202,22 @@ function update(){
         }
     }
 
+    // Mise à jour des particules
+    for(let i=particles.length-1;i>=0;i--){
+        const p = particles[i];
+        p.x += p.dx;
+        p.y += p.dy;
+        p.life--;
+        if(p.life <= 0) particles.splice(i,1);
+    }
+
+    // Mise à jour des ondes de choc
+    for(let i=shockwaves.length-1;i>=0;i--){
+        const s = shockwaves[i];
+        s.radius += 5;
+        if(s.radius > s.maxRadius) shockwaves.splice(i,1);
+    }
+
     // Level up + BONUS
     if(score >= level*200){
         level++;
@@ -217,6 +233,49 @@ function update(){
 
 function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // Particules (Explosions)
+    particles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life/30;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+    });
+
+    // Ondes de choc
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 2;
+    shockwaves.forEach(s => {
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.radius, 0, Math.PI*2);
+        ctx.stroke();
+    });
+
+    // Ennemis
+    enemies.forEach(e => {
+        ctx.fillStyle = e.color;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.radius, 0, Math.PI*2);
+        ctx.fill();
+    });
+
+    // Arrows (Tirs du joueur)
+    ctx.fillStyle = "yellow";
+    arrows.forEach(a => {
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, a.size, 0, Math.PI*2);
+        ctx.fill();
+    });
+
+    // Balles Boss
+    ctx.fillStyle = "orange";
+    bossBullets.forEach(b => {
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.size, 0, Math.PI*2);
+        ctx.fill();
+    });
 
     // Joueur
     ctx.fillStyle="lime";
